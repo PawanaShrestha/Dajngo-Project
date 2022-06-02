@@ -21,4 +21,8 @@ urlpatterns = [
     path('update_event/<event_id>', views.update_event, name = 'update-event'),
     path('delete_event/<event_id>', views.delete_event, name = 'delete-event'),
     path('delete_venue/<venue_id>', views.delete_venue, name = 'delete-venue'),
+    path('venue_text', views.venue_text, name = 'venue_text'),
+    path('venue_csv', views.venue_csv, name = 'venue_csv'),
+    path('venue_pdf', views.venue_pdf, name = 'venue_pdf'),
+    path('my_events', views.my_events, name = 'my_events'),
 ]

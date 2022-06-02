@@ -3,8 +3,141 @@ import calendar
 from calendar import HTMLCalendar
 from datetime import datetime
 from .models import Event, Venue
-from .forms import VenueForm, EventForm
-from django.http import HttpResponseRedirect
+# Import User Model from django
+from django.contrib.auth.models import User
+from .forms import VenueForm, EventForm, EventFormAdmin
+from django.http import HttpResponseRedirect, HttpResponse
+import csv
+from django.contrib import messages
+
+# Import PDF Stuff
+from django.http import FileResponse
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from reportlab.lib.pagesizes import letter
+
+from django.core.paginator import Paginator
+
+
+def my_events(request):
+    if request.user.is_authenticated:
+        me = request.user.id
+        events = Event.objects.filter(attendees = me)
+        return render(request, 'events/my_events.html', {'events': events})
+    else:
+        messages.success(request, ("You aren't allowed in this page."))
+        return redirect('home')
+
+
+def venue_pdf(request):
+    # Create byytestream buffer
+    buf = io.BytesIO()
+    # Create a canvas
+    c = canvas.Canvas(buf, pagesize = letter, bottomup = 0)
+    # Create a text object
+    textob = c.beginText()
+    textob.setTextOrigin(inch, inch)
+    textob.setFont("Helvetica", 14)
+
+    # Add some lines of text for testing
+    # lines = [
+    #     "this is line 1",
+    #     "this is line 2",
+    #     "this is line 3",
+    # ]
+
+    # Designate the Model
+    venues = Venue.objects.all()
+
+    lines = []
+
+    for venue in venues:
+        lines.append(venue.name)
+        lines.append(venue.address)
+        lines.append(venue.zip_code)
+        lines.append(venue.phone)
+        lines.append(venue.web)
+        lines.append(venue.email_address)
+        lines.append("  ")
+
+    #loop
+    for line in lines:
+        textob.textLine(line)
+
+    #finish up 
+    c.drawText(textob)
+    c.showPage()
+    c.save()
+    buf.seek(0)
+
+    return FileResponse(buf, as_attachment = True, filename = "Venue.pdf")
+
+
+
+def venue_csv(request):
+    response = HttpResponse(content_type = 'text/csv')
+    response['Content-Disposition'] = 'attachment; filename = venues.csv'
+
+    # Create a csv writer
+    writer = csv.writer(response)
+
+    # Designate the Model
+    venues = Venue.objects.all()
+
+    # Add Column heading to the csv files
+    writer.writerow(['Venue Name', 'Address', 'Zip Code', 'Phone', 'Web Address', 'Email'])
+
+    # Loop through the output
+    for venue in venues:
+        writer.writerow([venue.name, venue.address, venue.zip_code, venue.phone, venue.web, venue.email_address])
+
+    return response
+
+
+def venue_csv(request):
+    response = HttpResponse(content_type = 'text/csv')
+    response['Content-Disposition'] = 'attachment; filename = venues.csv'
+
+    # Create a csv writer
+    writer = csv.writer(response)
+
+    # Designate the Model
+    venues = Venue.objects.all()
+
+    # Add Column heading to the csv files
+    writer.writerow(['Venue Name', 'Address', 'Zip Code', 'Phone', 'Web Address', 'Email'])
+
+    # Loop through the output
+    for venue in venues:
+        writer.writerow([venue.name, venue.address, venue.zip_code, venue.phone, venue.web, venue.email_address])
+
+    return response
+
+
+
+# Generate Text File Venue List
+def venue_text(request):
+    response = HttpResponse(content_type = 'text/plain')
+    response['Content-Disposition'] = 'attachment; filename = venues.txt'
+    # Designate the Model
+    venues = Venue.objects.all()
+
+    #Create blank list
+    lines = []
+    # Loop through the output
+    for venue in venues:
+        lines.append(f'{venue.name}\n{venue.address}\n{venue.zip_code}\n{venue.phone}\n{venue.web}\m{venue.email_address}\n\n\n')
+
+    # lines = ["This is line 1\n ",
+    # "This is line 2\n", 
+    # "This is line 3\n"]
+
+    # Write to Text File
+    response.writelines(lines)
+    return response
+
+
 
 # Create your views here.
 
@@ -13,14 +146,22 @@ def delete_venue(reuqest, venue_id):
     venue.delete()
     return redirect('list-venues')
 
-def delete_event(reuqest, event_id):
+def delete_event(request, event_id):
     event = Event.objects.get(pk=event_id)
-    event.delete()
-    return redirect('list-events')
+    if request.user == event.manager: 
+        event.delete()
+        messages.success(request, ("Event Delete!!"))
+        return redirect('list-events')
+    else:
+        messages.success(request, ("You aren't authorized to delete this event!!"))
+        return redirect('list-events')
 
 def update_event(request, event_id):
     event = Event.objects.get(pk=event_id)
-    form = EventForm(request.POST or None, instance = event)
+    if request.user.is_superuser:
+        form = EventFormAdmin(request.POST or None, instance = event)
+    else: 
+        form = EventForm(request.POST or None, instance = event)
     if form.is_valid():
         form.save()
         return redirect('list-events')
@@ -33,12 +174,24 @@ def update_event(request, event_id):
 def add_event(request):
     submitted = False
     if request.method == "POST":
-        form = EventForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return HttpResponseRedirect('/add_event?submitted=True')
+        if request.user.is_superuser:
+            form = EventFormAdmin(request.POST)
+            if form.is_valid():
+                form.save()
+                return HttpResponseRedirect('/add_event?submitted=True')
+        else:
+            form = EventForm(request.POST)
+            if form.is_valid():
+                event = form.save(commit = False)
+                event.manager = request.user #logged in user
+                event.save()
+                # form.save()
+                return HttpResponseRedirect('/add_event?submitted=True')
     else :
-        form = EventForm
+        if request.user.is_superuser:
+            form = EventFormAdmin
+        else:
+            form = EventForm
         if 'submitted' in request.GET:
             submitted = True
     return render(request, 'events/add_event.html', {"form": form, 'submitted': submitted})
@@ -69,25 +222,43 @@ def search_venues(request):
 
 def show_venue(request, venue_id):
     venue = Venue.objects.get(pk=venue_id)
-    return render(request, 'events/show_venue.html', {'venue' : venue})
+    venue_owner = User.objects.get(pk = venue.owner)
+    return render(request, 'events/show_venue.html', {'venue' : venue, 'venue_owner': venue_owner})
 
 def list_venues(request):
+    # venue_list = Venue.objects.all().order_by('?')
     venue_list = Venue.objects.all()
-    return render(request, 'events/venues.html', {'venue_list' : venue_list})
 
+    # SetUp Pagination
+    p = Paginator(Venue.objects.all(), 3)
+    page = request.GET.get('page')
+    venues = p.get_page(page)
+    nums = "a" * venues.paginator.num_pages
+
+    return render(request, 'events/venues.html', 
+    {'venue_list' : venue_list,
+    'venues': venues,
+    'nums': nums})
 
 def add_venue(request):
     submitted = False
     if request.method == "POST":
         form = VenueForm(request.POST)
         if form.is_valid():
-            form.save()
+            venue = form.save(commit = False)
+            venue.owner = request.user.username #logged in user
+            venue.save()
+            # form.save()
             return HttpResponseRedirect('/add_venue?submitted=True')
     else :
         form = VenueForm
         if 'submitted' in request.GET:
             submitted = True
     return render(request, 'events/add_venue.html', {"form": form, 'submitted': submitted})
+
+def all_events(request):
+    event_list = Event.objects.all().order_by('event_date')
+    return render(request, 'events/event_list.html', {'event_list' : event_list})
 
 
 def home(request, year = datetime.now().year, month = datetime.now().strftime('%B')):
@@ -119,7 +290,5 @@ def home(request, year = datetime.now().year, month = datetime.now().strftime('%
         "current_time": current_time,
     })
 
-def all_events(request):
-    event_list = Event.objects.all()
-    return render(request, 'events/event_list.html', {'event_list' : event_list})
+
 

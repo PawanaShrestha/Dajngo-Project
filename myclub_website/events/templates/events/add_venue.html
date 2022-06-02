@@ -3,8 +3,11 @@
 
 {% block content %}
 
+{% if user.is_authenticated %}
     <center>
         <h1>Add Venue to Database</h1>
+
+        ID: {{user.username}}
         <br> <br>
         {% if submitted %}
             Your Venue was Submitted Successfully!
@@ -18,5 +21,10 @@
             </form>
         {% endif %}
     </center>
+{% else %}
+    <h1>Sorry! You must be logged in to view this page. </h1>
+    <a href="{% url 'login' %}">Login Here</a>
+
+{% endif %}
 
 {% endblock %}

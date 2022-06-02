@@ -3,6 +3,7 @@
 
 {% block content %}
 
+{% if user.is_authenticated %}
 
     <h1>Add Event to Database</h1>
     <br> <br>
@@ -15,6 +16,13 @@
             <input type="submit" value = "Submit" class = "btn btn-secondary">
         </form>
     {% endif %}
+
+{% else %}
+
+<h1>Sorry! You must be logged in to view this page. </h1>
+<a href="{% url 'login' %}">Login Here</a>
+
+{% endif %}
  
 
 {% endblock %}
