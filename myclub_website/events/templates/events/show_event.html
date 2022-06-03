@@ -2,10 +2,8 @@
 
 
 {% block content %}
-    <br>
-    <h1>Event List</h1>
 
-    {% for event in event_list %}
+    <h1>Show Event</h1>
 
     {% if event.approved %}
     <div class="card">
@@ -41,6 +39,6 @@
     
       {% endif %}
       <br>
-    {% endfor %}
+ 
 
 {% endblock %}

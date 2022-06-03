@@ -1,3 +1,4 @@
+from turtle import setundobuffer
 from django.shortcuts import redirect, render
 import calendar
 from calendar import HTMLCalendar
@@ -18,6 +19,65 @@ from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import letter
 
 from django.core.paginator import Paginator
+
+#Show event
+def show_event(request, event_id):
+    event = Event.objects.get(pk = event_id)
+    return render(request,"events/show_event.html", {
+            "event": event
+        })
+
+#Show events in a venue
+def venue_events(request, venue_id):
+    #Grab the venue
+    venue = Venue.objects.get(id = venue_id)
+    #Grab th events from that venue
+    events = venue.event_set.all()
+    if events:
+        return render(request,"events/venue_events.html", {
+            "events": events
+        })
+    else:
+        messages.success(request, ("That Venue does not have any events now."))
+        return redirect('admin_approval')
+
+
+#Create Admin Approcal Page
+def admin_approval(request):
+    #Get the venues
+
+    venue_list = Venue.objects.all() 
+
+    event_count = Event.objects.all().count()
+    venue_count = Venue.objects.all().count()
+    user_count = User.objects.all().count()
+
+    event_list = Event.objects.all().order_by('-event_date')
+    if request.user.is_superuser:
+        if request.method == "POST":
+            id_list = request.POST.getlist('boxes')
+
+            #Uncheck all events
+            event_list.update(approved = False)
+
+            #UPDATE THE DATABASE   
+            for x in id_list:
+                Event.objects.filter(pk = int(x)).update(approved = True)
+
+            messages.success(request, ("Event List Approval has been updated!"))
+            return redirect('list-events')
+        else:
+            return render(request, "events/admin_approval.html", {
+            "event_list": event_list,
+            "event_count": event_count,
+            "venue_count": venue_count,
+            "user_count": user_count,
+            "venue_list": venue_list
+        })
+    else:
+        messages.success(request, ("You aren't allowed to view this page"))
+        return redirect('home')
+    return render(request, "events/admin_approval.html", {})
 
 
 def my_events(request):
@@ -198,7 +258,7 @@ def add_event(request):
 
 def update_venue(request, venue_id):
     venue = Venue.objects.get(pk=venue_id)
-    form = VenueForm(request.POST or None, instance = venue)
+    form = VenueForm(request.POST or None, request.FILES or None, instance = venue)
     if form.is_valid():
         form.save()
         return redirect('list-venues')
@@ -220,10 +280,30 @@ def search_venues(request):
         'events/search_venues.html', 
         {})
 
+
+def search_events(request):
+    if request.method == "POST":
+        searched = request.POST['searched']
+        events = Event.objects.filter(description__contains = searched)
+        return render(request, 
+        'events/search_events.html', 
+        {"searched":  searched,
+        'events': events})
+    else: 
+        return render(request, 
+        'events/search_events.html', 
+        {})
+
 def show_venue(request, venue_id):
     venue = Venue.objects.get(pk=venue_id)
     venue_owner = User.objects.get(pk = venue.owner)
-    return render(request, 'events/show_venue.html', {'venue' : venue, 'venue_owner': venue_owner})
+    #Grab th events from that venue
+    events = venue.event_set.all()
+
+    return render(request, 'events/show_venue.html', {
+        'venue' : venue, 
+        'venue_owner': venue_owner,
+        'events': events})
 
 def list_venues(request):
     # venue_list = Venue.objects.all().order_by('?')
@@ -243,10 +323,10 @@ def list_venues(request):
 def add_venue(request):
     submitted = False
     if request.method == "POST":
-        form = VenueForm(request.POST)
+        form = VenueForm(request.POST, request.FILES)
         if form.is_valid():
             venue = form.save(commit = False)
-            venue.owner = request.user.username #logged in user
+            venue.owner = request.user.id #logged in user
             venue.save()
             # form.save()
             return HttpResponseRedirect('/add_venue?submitted=True')
@@ -257,7 +337,7 @@ def add_venue(request):
     return render(request, 'events/add_venue.html', {"form": form, 'submitted': submitted})
 
 def all_events(request):
-    event_list = Event.objects.all().order_by('event_date')
+    event_list = Event.objects.all().order_by('-event_date')
     return render(request, 'events/event_list.html', {'event_list' : event_list})
 
 
@@ -276,6 +356,13 @@ def home(request, year = datetime.now().year, month = datetime.now().strftime('%
     now = datetime.now()
     current_year = now.year
 
+    #Query the events Models for Dates
+    event_list = Event.objects.filter(
+        event_date__year = year, 
+        event_date__month = month_number,
+
+    )
+
     #get current time
     current_time = now.strftime('%I:%M %p')
 
@@ -288,6 +375,7 @@ def home(request, year = datetime.now().year, month = datetime.now().strftime('%
         "cal": cal,
         "current_year": current_year,
         "current_time": current_time,
+        "event_list": event_list,
     })
 
 
